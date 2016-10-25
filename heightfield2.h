@@ -52,13 +52,21 @@ public:
     bool IntersectCk(Point*,const Ray&,float*,float*,DifferentialGeometry*)const;
     bool IntersectCkP(Point*,const Ray&)const;
     BBox ObjectBound() const;
+    Normal getNormal(int i, int j) const;
+    Normal getNormalUnit(int nu, int x, int y)const;
+    void initNormals();
+    void Heightfield2::GetShadingGeometry(const Transform &obj2world,
+        const DifferentialGeometry &dg,
+        DifferentialGeometry *dgShading) const
+
 private:
     // Heightfield2 Private Data
     float *z;
     int nx, ny;
-    //BBox bounds;
+    BBox bounds;
     Vector width;
     int nVoxels[2];
+    Normal *all_normals;
 };
 
 

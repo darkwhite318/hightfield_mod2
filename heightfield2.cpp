@@ -35,7 +35,7 @@
 #include "shapes/heightfield2.h"
 #include "shapes/trianglemesh.h"
 #include "paramset.h"
-#include <iostream>
+//#include <iostream>
 
 // Heightfield2 Method Definitions
 Heightfield2::Heightfield2(const Transform *o2w, const Transform *w2o,
@@ -46,9 +46,12 @@ Heightfield2::Heightfield2(const Transform *o2w, const Transform *w2o,
     z = new float[nx*ny];
     memcpy(z, zs, nx*ny*sizeof(float));
     
+     bounds = ObjectBound();
      width = Vector(1.f/(nx-1),1.f/(ny-1),0);
      nVoxels[0] = (nx-1);
      nVoxels[1] = (ny-1);
+     all_normals = new Normal[nx * ny];
+     initNormals();
 }
 
 
@@ -75,7 +78,6 @@ bool Heightfield2::Intersect(const Ray &r, float *tHit, float *rayEpsilon,Differ
  //copy form grid.cpp
     // Check ray against overall grid bounds
     float rayT;
-    BBox bounds = ObjectBound();
     
     Ray ray_o;
     (*WorldToObject)(r,&ray_o);//convert ray to object coordinate 
@@ -101,10 +103,7 @@ bool Heightfield2::Intersect(const Ray &r, float *tHit, float *rayEpsilon,Differ
         invWidth[axis] = (width[axis]==0.f) ? 0.f:1.f / width[axis];
         int v = Float2Int((gridIntersect[axis]-bounds.pMin[axis])*invWidth[axis]);
         Pos[axis] = Clamp(v,0,nVoxels[axis]-1);
-        //std::cout<<"gridIntersect["<<axis<<"]"<<gridIntersect[axis]<<std::endl;
-        //std::cout<<"bounds.pMin["<<axis<<"]"<<bounds.pMin[axis]<<std::endl;
-        std::cout<<"v:"<<v<<std::endl;
-        //std::cout<<"Pos["<<axis<<"]"<<Pos[axis]<<std::endl;
+        
         
         
         if (ray_o.d[axis] >= 0) {
@@ -115,7 +114,7 @@ bool Heightfield2::Intersect(const Ray &r, float *tHit, float *rayEpsilon,Differ
             DeltaT[axis] = width[axis] / ray_o.d[axis];
             Step[axis] = 1;
             Out[axis] = nVoxels[axis];
-            std::cout<<"NextCrossingT["<<axis<<"]"<<NextCrossingT[axis]<<std::endl;
+ 
         }
         else {
             // Handle ray with negative direction for voxel stepping
@@ -125,7 +124,7 @@ bool Heightfield2::Intersect(const Ray &r, float *tHit, float *rayEpsilon,Differ
             DeltaT[axis] = -width[axis] / ray_o.d[axis];
             Step[axis] = -1;
             Out[axis] = -1;
-            std::cout<<"NextCrossingT["<<axis<<"]"<<NextCrossingT[axis]<<std::endl;
+
         }
     }
 
@@ -233,7 +232,6 @@ bool Heightfield2::IntersectP(const Ray &r) const{
   //copy form grid.cpp
     // Check ray against overall grid bounds
     float rayT;
-    BBox bounds = ObjectBound();
     
     Ray ray_o;
     (*WorldToObject)(r,&ray_o);//convert ray to object coordinate 
@@ -393,7 +391,7 @@ void Heightfield2::Refine(vector<Reference<Shape> > &refined) const {
 
 
 Heightfield2 *CreateHeightfield2Shape(const Transform *o2w, const Transform *w2o,
-        bool reverseOrientation, const ParamSet &params) {
+    bool reverseOrientation, const ParamSet &params) {
     int nu = params.FindOneInt("nu", -1);
     int nv = params.FindOneInt("nv", -1);
     int nitems;
@@ -403,4 +401,85 @@ Heightfield2 *CreateHeightfield2Shape(const Transform *o2w, const Transform *w2o
     return new Heightfield2(o2w, w2o, reverseOrientation, nu, nv, Pz);
 }
 
+Normal Heightfield2::getNormal(int i, int j) const{
+    
+    bool textPlace[4] = {0,0,0,0}; // right up, right down, left down, left up
 
+    if( i < (nx-1)){
+
+        if( j < (ny-1))
+            textPlace[0] = 1; //right up
+
+        else if (j > 0)
+            textPlace[1] = 1; //right down
+    }
+
+    if( i > 0){
+
+        if( j <(ny-1))
+            textPlace[3] = 1;//left up
+
+        else if(j > 0)
+            textPlace[2] =1;//left down
+    }
+    
+    int countN =0; //count
+    Normal avgNormal;
+    for(int iter=0; iter<4; iter++){
+        if(textPlace[iter]){
+            avgNormal += getNormalUnit(iter,i,j); //not sure if one could do so or not 
+            countN ++;
+        }
+    }
+
+    return Normalize(Normal(avgNormal.x/countN, avgNormal.y/countN, avgNormal.z/countN));
+}
+
+Normal Heightfield2::getNormalUnit(int nu, int x, int y)const {
+    
+    Vector dx (1.f*width[0] ,0 ,0);
+    Vector dy (0 ,1.f*width[1] ,0);
+    switch(nu){
+
+        case 0: //right up
+            dx.z = z[(x+1) + y*nx] - z[x + y*nx];
+            dy.z = z[x + (y+1)*nx] - z[x + y*nx];
+            return Normalize(Normal(Cross(dx,dy)));
+            break;
+
+        case 1: //right down
+            dx.z = z[(x+1) + y*nx] - z[x + y*nx];
+            dy.z = z[x + (y-1)*nx] - z[x + y*nx];
+            return Normalize(Normal(Cross(dy,dx)));
+            break;
+
+        case 2://left down
+            dx.z = z[(x-1) + y*nx] - z[x + y*nx];
+            dy.z = z[x + (y-1)*nx] - z[x + y*nx];
+            return Normalize(Normal(Cross(dx,dy)));
+            break;
+
+        case 3://left up
+            dx.z = z[(x-1) + y*nx] - z[x + y*nx];
+            dy.z = z[x + (y+1)*nx] - z[x + y*nx];
+            return Normalize(Normal(Cross(dy,dx)));
+            break;
+
+        default:
+           break;
+    }
+}
+
+void Heightfield2::initNormals() {
+    for (int j = 0; j < ny; ++j) {
+        for (int i = 0; i < nx; ++i) {
+            all_normals[i + j*nx] = getNormal(i, j);
+        }
+    }
+}
+
+void Heightfield2::GetShadingGeometry(const Transform &obj2world,
+        const DifferentialGeometry &dg,
+        DifferentialGeometry *dgShading) const {
+
+}
